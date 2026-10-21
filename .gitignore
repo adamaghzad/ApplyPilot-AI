@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+
+# TypeScript
+*.tsbuildinfo
+
+# Local database (PGlite / SQLite file-backed dev stores)
+.pgdata/
+dev.db
+dev.db-journal
+*.db
+
+# Uploads & generated documents
+storage/
+uploads/
+public/uploads/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# Caches
+.turbo/
+.cache/
+.eslintcache
+
+# Editors & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+playwright-report/
+test-results/
+
+# Misc
+.vercel
