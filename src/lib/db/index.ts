@@ -25,6 +25,8 @@ function resolveDriver(): { driver: DbDriver; url: string } {
   if (!raw) return { driver: "pglite", url: "./.pgdata" };
   if (raw.startsWith("postgres://") || raw.startsWith("postgresql://")) return { driver: "postgres", url: raw };
   if (raw.startsWith("file:")) return { driver: "pglite", url: raw.replace(/^file:\/*/, "") || "./.pgdata" };
+  // In-memory PGlite: `memory://` or `:memory:`. Handy for tests and CI.
+  if (raw.startsWith("memory://") || raw === ":memory:") return { driver: "pglite", url: "memory://" };
   return { driver: "pglite", url: raw };
 }
 
@@ -38,6 +40,10 @@ function createDb(): { db: AppDb; driver: DbDriver } {
     const { drizzle } = require("drizzle-orm/node-postgres") as typeof import("drizzle-orm/node-postgres");
     const pool = new Pool({ connectionString: url, max: Number(process.env.DATABASE_POOL_MAX ?? 10) });
     return { db: drizzle(pool, { schema }) as AppDb, driver };
+  }
+
+  if (url === "memory://") {
+    return { db: drizzlePglite(new PGlite(), { schema }) as unknown as AppDb, driver };
   }
 
   const dataDir = path.isAbsolute(url) ? url : path.join(process.cwd(), url);

@@ -69,7 +69,7 @@ function job(overrides: Partial<JobListing> = {}): JobListing {
     sourceUrl: "https://example.com/jobs/1",
     externalId: null,
     applyUrl: null,
-    postedAt: new Date(),
+    postedAt: new Date("2026-01-01T00:00:00Z"),
     language: "en",
     dedupeHash: "hash-1",
     isActive: true,

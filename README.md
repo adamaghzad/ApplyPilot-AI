@@ -196,7 +196,7 @@ a safe default.
 | Variable | Required | Notes |
 |---|---|---|
 | `APP_URL` | yes | Used for OAuth redirects |
-| `DATABASE_URL` | no | `file:./.pgdata` (embedded Postgres) or a `postgresql://…` URL |
+| `DATABASE_URL` | no | `file:./.pgdata` (embedded Postgres), `postgresql://…`, or `memory://` for an in-memory instance (tests) |
 | `AUTH_SECRET` | **prod** | `openssl rand -hex 32` |
 | `ENCRYPTION_KEY` | **prod** | 32-byte key, AES-256-GCM, encrypts OAuth tokens at rest |
 | `AI_PROVIDER` | no | `auto` (default) \| `openai` \| `openrouter` \| `groq` \| `gemini` \| `ollama` \| `custom` |
@@ -306,10 +306,14 @@ mailbox sync 20/h · demo seed 5/h.
 ## Testing
 
 ```bash
-npm test         # 40 unit tests (vitest, no DB, no network)
+npm test         # 54 tests: 40 unit + 14 database integration (vitest, no network)
 npm run smoke    # 41 end-to-end API checks against a running server
 npm run typecheck
 ```
+
+The unit suite runs pure logic with no I/O. The integration suite spins up PGlite
+in memory (`DATABASE_URL=memory://`), applies the real migrations from `drizzle/`
+and exercises the same service functions the API routes call.
 
 The unit suite covers the parts that must never regress:
 
@@ -321,6 +325,18 @@ The unit suite covers the parts that must never regress:
   deterministic output, gaps surfaced, FR/EN explanations
 - `src/lib/documents/export.test.ts` — PDF/DOCX/Markdown export, WinAnsi sanitisation,
   pagination
+
+`tests/services.test.ts` covers the database-backed behaviour:
+
+- default rule set, persisted updates, idempotent upserts, reset to defaults
+- application preparation drafts grounded in the real CV (no placeholders),
+  match scores with a full breakdown, idempotent re-preparation
+- send guards: refused before approval, refused without a connected mailbox with
+  the record left untouched
+- job de-duplication per user — including **two accounts storing the same listing**
+- demo seeding: coherent pipeline, safe to run twice, every contact keeps its
+  source URL, confidence and verification state
+- pipeline statistics are scoped to a single user
 
 `npm run smoke` walks the full product: signup → onboarding → CV upload → research →
 discovery → matching → drafting → approval → refused send → exports → automation → stats →
@@ -369,4 +385,4 @@ intended for multi-instance production deployments.
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE) if present in your fork.
+MIT — see [LICENSE](LICENSE).
