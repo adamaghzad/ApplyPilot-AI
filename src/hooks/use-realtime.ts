@@ -6,66 +6,127 @@ import { useQueryClient } from "@tanstack/react-query";
 export type RealtimeMessage = { type: string; payload: unknown };
 
 /**
- * Subscribes to the server-sent event stream and invalidates affected queries.
- * Falls back to polling when the browser has no EventSource support.
+ * A single server-sent event stream shared by the whole app.
+ *
+ * One EventSource is opened for the shell (and any other subscriber) instead of
+ * one per mounted view. Incoming events invalidate exactly the queries they
+ * affect, so counters, boards and feeds update from real backend activity.
+ * When EventSource is unavailable the callers' `refetchInterval` polling stays
+ * in place as the fallback.
  */
+
+type Store = {
+  source: EventSource | null;
+  connected: boolean;
+  lastEvent: RealtimeMessage | null;
+  subscribers: Set<() => void>;
+  queryClients: Set<ReturnType<typeof useQueryClient>>;
+};
+
+const store: Store = {
+  source: null,
+  connected: false,
+  lastEvent: null,
+  subscribers: new Set(),
+  queryClients: new Set(),
+};
+
+function emit() {
+  for (const listener of store.subscribers) listener();
+}
+
+function handleMessage(event: MessageEvent) {
+  let data: RealtimeMessage;
+  try {
+    data = JSON.parse(event.data) as RealtimeMessage;
+  } catch (error) {
+    console.warn("[realtime] bad payload", error);
+    return;
+  }
+
+  store.lastEvent = data;
+  emit();
+
+  for (const client of store.queryClients) {
+    switch (data.type) {
+      case "activity":
+      case "agent":
+        void client.invalidateQueries({ queryKey: ["activity"] });
+        void client.invalidateQueries({ queryKey: ["agents"] });
+        break;
+      case "application":
+        void client.invalidateQueries({ queryKey: ["applications"] });
+        void client.invalidateQueries({ queryKey: ["stats"] });
+        void client.invalidateQueries({ queryKey: ["notifications"] });
+        break;
+      case "job":
+        void client.invalidateQueries({ queryKey: ["jobs"] });
+        void client.invalidateQueries({ queryKey: ["stats"] });
+        break;
+      case "company":
+        void client.invalidateQueries({ queryKey: ["companies"] });
+        break;
+      case "notification":
+        void client.invalidateQueries({ queryKey: ["notifications"] });
+        break;
+      case "task":
+        void client.invalidateQueries({ queryKey: ["tasks"] });
+        void client.invalidateQueries({ queryKey: ["applications"] });
+        break;
+      case "cv":
+        void client.invalidateQueries({ queryKey: ["cv"] });
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+function connect() {
+  if (store.source || typeof window === "undefined" || typeof EventSource === "undefined") return;
+
+  const source = new EventSource("/api/events/stream");
+  store.source = source;
+
+  source.onopen = () => {
+    store.connected = true;
+    emit();
+  };
+  source.onerror = () => {
+    store.connected = false;
+    emit();
+  };
+  source.addEventListener("message", handleMessage as EventListener);
+}
+
+function disconnect() {
+  if (!store.source) return;
+  store.source.removeEventListener("message", handleMessage as EventListener);
+  store.source.close();
+  store.source = null;
+  store.connected = false;
+  emit();
+}
+
+/** Subscribes to the shared stream. Returns live connection state and last event. */
 export function useRealtime(enabled = true) {
   const queryClient = useQueryClient();
-  const [connected, setConnected] = React.useState(false);
-  const [lastEvent, setLastEvent] = React.useState<RealtimeMessage | null>(null);
+  const [, force] = React.useReducer((n: number) => n + 1, 0);
 
   React.useEffect(() => {
-    if (!enabled || typeof window === "undefined" || typeof EventSource === "undefined") return;
+    if (!enabled) return;
+    const listener = () => force();
+    store.subscribers.add(listener);
+    store.queryClients.add(queryClient);
+    connect();
 
-    const source = new EventSource("/api/events/stream");
-
-    source.onopen = () => setConnected(true);
-    source.onerror = () => setConnected(false);
-
-    const handler = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data) as RealtimeMessage;
-        setLastEvent(data);
-        switch (data.type) {
-          case "activity":
-          case "agent":
-            queryClient.invalidateQueries({ queryKey: ["activity"] });
-            queryClient.invalidateQueries({ queryKey: ["agents"] });
-            break;
-          case "application":
-            queryClient.invalidateQueries({ queryKey: ["applications"] });
-            queryClient.invalidateQueries({ queryKey: ["stats"] });
-            queryClient.invalidateQueries({ queryKey: ["notifications"] });
-            break;
-          case "job":
-            queryClient.invalidateQueries({ queryKey: ["jobs"] });
-            queryClient.invalidateQueries({ queryKey: ["stats"] });
-            break;
-          case "company":
-            queryClient.invalidateQueries({ queryKey: ["companies"] });
-            break;
-          case "notification":
-            queryClient.invalidateQueries({ queryKey: ["notifications"] });
-            break;
-          case "task":
-            queryClient.invalidateQueries({ queryKey: ["tasks"] });
-            queryClient.invalidateQueries({ queryKey: ["applications"] });
-            break;
-          default:
-            break;
-        }
-      } catch (error) {
-        console.warn("[realtime] bad payload", error);
-      }
-    };
-
-    source.addEventListener("message", handler as EventListener);
     return () => {
-      source.removeEventListener("message", handler as EventListener);
-      source.close();
-      setConnected(false);
+      store.subscribers.delete(listener);
+      store.queryClients.delete(queryClient);
+      // Tear the stream down only when the last subscriber goes away.
+      if (store.subscribers.size === 0) disconnect();
     };
   }, [enabled, queryClient]);
 
-  return { connected, lastEvent };
+  return { connected: store.connected, lastEvent: store.lastEvent };
 }

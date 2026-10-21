@@ -275,7 +275,7 @@ describe("send failure reporting", () => {
     // persisted so the UI can explain it instead of silently staying queued.
     await db.insert(schema.emailConnections).values({
       userId,
-      provider: "GOOGLE",
+      provider: "GMAIL",
       emailAddress: "amine@example.com",
       displayName: "Amine Berrada",
       accessTokenEnc: "not-a-valid-ciphertext",
