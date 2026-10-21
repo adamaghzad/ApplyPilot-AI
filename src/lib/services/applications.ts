@@ -361,6 +361,8 @@ export async function approveApplication(userId: string, applicationId: string, 
       status: scheduledFor ? "SCHEDULED" : "AWAITING_APPROVAL",
       approvedAt: new Date(),
       scheduledFor,
+      // A fresh approval clears whatever blocked the previous attempt.
+      lastError: null,
       updatedAt: new Date(),
     })
     .where(eq(applications.id, applicationId))
@@ -498,9 +500,12 @@ export async function sendApplication(userId: string, applicationId: string, opt
   }
 
   const body = letter ? `${email.body}\n\n${letter.plainText}` : email.body;
-  const accessToken = await ensureAccessToken(connection);
 
   try {
+    // Resolving the access token is part of the send: if it fails the
+    // application must record why instead of silently staying queued.
+    const accessToken = await ensureAccessToken(connection);
+
     let providerMessageId = "";
     if (connection.provider === "GMAIL") {
       const result = await sendGmailMessage(accessToken, {
@@ -522,7 +527,13 @@ export async function sendApplication(userId: string, applicationId: string, opt
 
     await getDb()
       .update(applications)
-      .set({ status: "SENT", sentAt: now, followUpDueAt: followUpDueDate(now, followUpDays), updatedAt: new Date() })
+      .set({
+        status: "SENT",
+        sentAt: now,
+        followUpDueAt: followUpDueDate(now, followUpDays),
+        lastError: null,
+        updatedAt: new Date(),
+      })
       .where(eq(applications.id, applicationId));
 
     await getDb().update(generatedEmails).set({ status: "SENT", updatedAt: new Date() }).where(eq(generatedEmails.id, email.id));
@@ -566,6 +577,7 @@ export async function sendApplication(userId: string, applicationId: string, opt
     if (rateLimited) {
       await markRateLimited(connection.id, message);
       await notify({ userId, title: "Mailbox rate limited", body: "Automation paused to respect provider limits. It resumes automatically.", type: "WARNING" });
+      await getDb().update(applications).set({ lastError: message, updatedAt: new Date() }).where(eq(applications.id, applicationId));
       await recordActivity({ userId, agent: "AUTOMATION", message: `Rate limited by ${connection.provider} — automation paused`, type: "WARNING" });
 
       if (isRuleActive(rules, "pause_on_rate_limit")) {
@@ -582,7 +594,10 @@ export async function sendApplication(userId: string, applicationId: string, opt
       }
     }
 
-    await getDb().update(applications).set({ updatedAt: new Date() }).where(eq(applications.id, applicationId));
+    await getDb()
+      .update(applications)
+      .set({ lastError: message, updatedAt: new Date() })
+      .where(eq(applications.id, applicationId));
     await recordActivity({ userId, agent: "AUTOMATION", message: `Send failed: ${message}`, type: "ERROR", meta: { applicationId } });
     throw error;
   }

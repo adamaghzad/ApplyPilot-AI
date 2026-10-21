@@ -1,0 +1,1 @@
+ALTER TABLE "applications" ADD COLUMN "last_error" text;

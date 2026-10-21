@@ -255,3 +255,56 @@ describe("pipeline statistics", () => {
     expect(statsB.total).toBe(0);
   });
 });
+
+describe("send failure reporting", () => {
+  it("records why a send failed on the application and clears it on success", async () => {
+    const db = await testDb();
+    const schema = await import("@/lib/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const { approveApplication, prepareApplication, sendApplication } = await import("@/lib/services/applications");
+
+    const userId = (await createTestUser()).id;
+    const company = await createCompany(userId);
+    await createContact(userId, company.id);
+    const job = await createJob(userId, company.id);
+
+    const prepared = await prepareApplication(userId, job.id);
+    await approveApplication(userId, prepared.application.id);
+
+    // A mailbox that exists but whose token cannot be used: the failure must be
+    // persisted so the UI can explain it instead of silently staying queued.
+    await db.insert(schema.emailConnections).values({
+      userId,
+      provider: "GOOGLE",
+      emailAddress: "amine@example.com",
+      displayName: "Amine Berrada",
+      accessTokenEnc: "not-a-valid-ciphertext",
+      refreshTokenEnc: "not-a-valid-ciphertext",
+      tokenIv: "00000000000000000000000000000000",
+      tokenTag: "00000000000000000000000000000000",
+      status: "CONNECTED",
+      dailyLimit: 10,
+    });
+
+    await expect(sendApplication(userId, prepared.application.id)).rejects.toThrow();
+
+    const [afterFailure] = await db
+      .select()
+      .from(schema.applications)
+      .where(eq(schema.applications.id, prepared.application.id))
+      .limit(1);
+
+    expect(afterFailure.lastError).toBeTruthy();
+    expect(afterFailure.status).toBe("AWAITING_APPROVAL");
+    expect(afterFailure.sentAt).toBeNull();
+
+    // Approving again clears the error so a stale message never lingers.
+    await approveApplication(userId, prepared.application.id);
+    const [afterApproval] = await db
+      .select()
+      .from(schema.applications)
+      .where(eq(schema.applications.id, prepared.application.id))
+      .limit(1);
+    expect(afterApproval.lastError).toBeNull();
+  });
+});

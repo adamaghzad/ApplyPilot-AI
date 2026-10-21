@@ -49,10 +49,15 @@ type Company = {
   researchStatus: string;
   description: string | null;
   technologies: string[] | null;
-  hiringSignals: string[] | null;
   researchConfidence: number | null;
   researchNotes: string | null;
-  researchedAt: string | null;
+  researchData: {
+    sources?: { url: string; title?: string; kind?: string }[];
+    techStack?: string[];
+    hiringSignals?: string[];
+    applicationProcess?: string;
+  } | null;
+  lastResearchedAt: string | null;
   updatedAt: string;
 };
 
@@ -213,7 +218,11 @@ export function CompaniesView() {
                   )}
 
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>{company.researchedAt ? `researched ${timeAgo(company.researchedAt)}` : "never researched"}</span>
+                    <span>
+                      {company.lastResearchedAt
+                        ? `researched ${timeAgo(company.lastResearchedAt)}`
+                        : "never researched"}
+                    </span>
                     {company.researchConfidence !== null && (
                       <span>confidence {Math.round(company.researchConfidence * 100)}%</span>
                     )}
@@ -426,6 +435,8 @@ function CompanyDetailDialog({
   });
 
   const data = detail.data;
+  const hiringSignals = data?.company.researchData?.hiringSignals ?? [];
+  const sources = data?.company.researchData?.sources ?? [];
 
   return (
     <Dialog open={Boolean(companyId)} onOpenChange={(open) => !open && onClose()}>
@@ -481,13 +492,31 @@ function CompanyDetailDialog({
               </Card>
             )}
 
-            {data.company.hiringSignals && data.company.hiringSignals.length > 0 && (
+            {hiringSignals.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {data.company.hiringSignals.map((signal) => (
+                {hiringSignals.map((signal) => (
                   <Badge key={signal} variant="secondary" className="text-[10px]">
                     {signal}
                   </Badge>
                 ))}
+              </div>
+            )}
+
+            {sources.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-sm font-medium">Sources consulted</h3>
+                <ul className="space-y-1">
+                  {sources.map((source) => (
+                    <li key={source.url} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span className="rounded bg-muted px-1 py-0.5 text-[10px] uppercase">
+                        {source.kind?.replace(/_/g, " ") ?? "page"}
+                      </span>
+                      <a href={source.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
+                        {source.title ?? source.url} <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 

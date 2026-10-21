@@ -413,6 +413,8 @@ export const applications = pgTable(
     followUpDueAt: timestamp("follow_up_due_at", { withTimezone: true }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     rejectionReason: text("rejection_reason"),
+    /** Why the last send attempt failed — surfaced in the UI, never swallowed. */
+    lastError: text("last_error"),
     notes: text("notes"),
     priority: integer("priority").notNull().default(0),
     boardOrder: doublePrecision("board_order").notNull().default(0),

@@ -60,10 +60,13 @@ type Parsed = {
 type Document = {
   id: string;
   fileName: string;
-  fileSize: number;
+  /** Size in bytes as stored by the CV service. */
+  sizeBytes: number;
   mimeType: string;
   isPrimary: boolean;
-  parsedData: Parsed | null;
+  /** Parsed profile, straight from the `parsed` column. */
+  parsed: Parsed | null;
+  status: string;
   createdAt: string;
 };
 
@@ -82,7 +85,7 @@ export function CvView() {
 
   const docs = documents.data?.documents ?? [];
   const primary = docs.find((doc) => doc.isPrimary) ?? docs[0] ?? null;
-  const parsed = primary?.parsedData ?? null;
+  const parsed = (primary?.parsed ?? null) as Parsed | null;
 
   const invalidate = React.useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["cv"] });
@@ -426,7 +429,7 @@ export function CvView() {
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium">{doc.fileName}</p>
                       <p className="text-[10px] text-muted-foreground">
-                        {bytesToSize(doc.fileSize)} · {timeAgo(doc.createdAt)}
+                        {bytesToSize(doc.sizeBytes)} · {timeAgo(doc.createdAt)}
                       </p>
                     </div>
                     {doc.isPrimary && (
@@ -436,12 +439,12 @@ export function CvView() {
                     )}
                   </div>
 
-                  {doc.parsedData && (
+                  {doc.parsed && (
                     <div className="mt-2 space-y-1">
-                      <Progress value={Math.min(100, (doc.parsedData.skills.length / 25) * 100)} className="h-1" />
+                      <Progress value={Math.min(100, ((doc.parsed.skills?.length ?? 0) / 25) * 100)} className="h-1" />
                       <p className="text-[10px] text-muted-foreground">
-                        {doc.parsedData.skills.length} skills · {doc.parsedData.experience.length} role(s) ·{" "}
-                        {doc.parsedData.rawLength} chars extracted
+                        {doc.parsed.skills?.length ?? 0} skills · {doc.parsed.experience?.length ?? 0} role(s) ·{" "}
+                        {doc.parsed.rawLength ?? 0} chars extracted
                       </p>
                     </div>
                   )}

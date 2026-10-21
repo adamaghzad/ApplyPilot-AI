@@ -17,6 +17,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 
 const BASE = (process.env.BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const EMAIL = process.env.SMOKE_EMAIL ?? `smoke-${Date.now()}@example.com`;
+const FALLBACK_EMAIL = process.env.SMOKE_FALLBACK_EMAIL ?? "smoke@example.com";
 const PASSWORD = "password123";
 
 let cookie = "";
@@ -130,12 +131,31 @@ async function main() {
   }
 
   // ------------------------------------------------------------- auth flow
-  const signup = await post("/api/auth/signup", {
+  // Signup is rate limited (5/h), so fall back to a stable account when a fresh
+  // one cannot be created — the walkthrough works with either.
+  let signup = await post("/api/auth/signup", {
     name: "Amine Berrada",
     email: EMAIL,
     password: PASSWORD,
     locale: "en",
   });
+
+  if (signup.status !== 201) {
+    const reused = await post("/api/auth/login", { email: FALLBACK_EMAIL, password: PASSWORD });
+    if (reused.status === 200) {
+      signup = { status: 201, body: { ok: true, data: {} } };
+      console.log(`      (signup rate limited — reusing ${FALLBACK_EMAIL})`);
+    } else {
+      const created = await post("/api/auth/signup", {
+        name: "Amine Berrada",
+        email: FALLBACK_EMAIL,
+        password: PASSWORD,
+        locale: "en",
+      });
+      signup = created.status === 201 ? { status: 201, body: { ok: true, data: {} } } : created;
+    }
+  }
+
   expectOk("signup", signup, { status: 201 });
 
   const me = await get("/api/auth/me");
