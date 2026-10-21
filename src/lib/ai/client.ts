@@ -1,10 +1,11 @@
 import { env } from "@/lib/env";
+import { PROVIDERS, ollamaAvailable, resolveProvider, type ProviderId } from "@/lib/ai/providers";
 
 export const PROMPT_VERSION = "2026.02-v1";
 
 export class AINotConfiguredError extends Error {
-  constructor() {
-    super("OPENAI_API_KEY is not configured — the deterministic local engine is used instead.");
+  constructor(message = "No model backend is configured — the deterministic local engine is used instead.") {
+    super(message);
     this.name = "AINotConfiguredError";
   }
 }
@@ -23,6 +24,8 @@ export type ChatMessage = { role: "system" | "user" | "assistant"; content: stri
 export type CompletionResult<T> = {
   data: T;
   model: string;
+  /** Provider that served the call, e.g. "openrouter:llama-3.3-70b". */
+  provider: string;
   tokensIn: number;
   tokensOut: number;
   latencyMs: number;
@@ -41,11 +44,12 @@ type CompleteOptions = {
 };
 
 /**
- * Minimal, dependency-free OpenAI Chat Completions client.
+ * Provider-agnostic completion call.
  *
- * Uses `response_format: json_object` for structured outputs and validates/parses
- * the payload before it reaches agent code. Every call is metered (tokens + latency)
- * so generations can be logged, evaluated and compared across prompt versions.
+ * Works with any OpenAI-compatible endpoint (OpenAI, OpenRouter, Groq, Ollama,
+ * Together, LM Studio…), with Google Gemini's native API, and degrades to
+ * `AINotConfiguredError` when no backend is available so callers can fall back
+ * to the deterministic local engine. Every call is metered (tokens + latency).
  */
 export async function complete<T>({
   system,
@@ -55,57 +59,164 @@ export async function complete<T>({
   model,
   json = true,
 }: CompleteOptions): Promise<CompletionResult<T>> {
-  if (!env.OPENAI_API_KEY) throw new AINotConfiguredError();
+  const resolved = resolveProvider();
+  if (!resolved) throw new AINotConfiguredError();
 
   const started = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
 
   try {
-    const response = await fetch(`${env.OPENAI_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: model ?? env.OPENAI_MODEL,
-        temperature,
-        max_tokens: maxTokens,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        ...(json ? { response_format: { type: "json_object" } } : {}),
-      }),
-      signal: controller.signal,
-    });
+    const target = model ?? resolved.model;
+    const id: ProviderId = resolved.provider.id;
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new AIRequestError(`OpenAI responded ${response.status}: ${text.slice(0, 300)}`, response.status);
+    if (id === "ollama") {
+      const reachable = await ollamaAvailable();
+      if (!reachable) {
+        throw new AINotConfiguredError(
+          `Ollama is configured but not reachable at ${env.OLLAMA_BASE_URL} — start it with \`ollama serve\`, or unset AI_PROVIDER.`,
+        );
+      }
     }
 
-    const payload = (await response.json()) as {
-      model?: string;
-      choices?: { message?: { content?: string } }[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number };
-    };
+    const raw =
+      id === "gemini"
+        ? await completeGemini({
+            apiKey: resolved.apiKey,
+            model: target,
+            system,
+            user,
+            temperature,
+            maxTokens,
+            json,
+            signal: controller.signal,
+          })
+        : await completeChatCompletions({
+            baseUrl: resolved.baseUrl,
+            apiKey: resolved.apiKey,
+            model: target,
+            system,
+            user,
+            temperature,
+            maxTokens,
+            json,
+            jsonMode: resolved.provider.jsonMode,
+            signal: controller.signal,
+          });
 
-    const content = payload.choices?.[0]?.message?.content ?? "";
-    const parsed = json ? parseJsonSafe<T>(content) : (content as unknown as T);
+    const result = raw as { content: string; model: string; tokensIn: number; tokensOut: number };
+    const parsed = json ? parseJsonSafe<T>(result.content) : ((result.content as unknown) as T);
 
     return {
       data: parsed,
-      model: payload.model ?? model ?? env.OPENAI_MODEL,
-      tokensIn: payload.usage?.prompt_tokens ?? 0,
-      tokensOut: payload.usage?.completion_tokens ?? 0,
+      model: result.model || target,
+      provider: `${id}:${result.model || target}`,
+      tokensIn: result.tokensIn,
+      tokensOut: result.tokensOut,
       latencyMs: Date.now() - started,
-      raw: content,
+      raw: result.content,
     };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+type WireOptions = {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  system: string;
+  user: string;
+  temperature: number;
+  maxTokens: number;
+  json: boolean;
+  jsonMode: "response_format" | "none";
+  signal: AbortSignal;
+};
+
+type WireResult = { content: string; model: string; tokensIn: number; tokensOut: number };
+
+/** OpenAI Chat Completions — also Groq, OpenRouter, Ollama, Together, LM Studio… */
+async function completeChatCompletions(o: WireOptions): Promise<WireResult> {
+  const response = await fetch(`${o.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(o.apiKey ? { authorization: `Bearer ${o.apiKey}` } : {}),
+    },
+    body: JSON.stringify({
+      model: o.model,
+      temperature: o.temperature,
+      max_tokens: o.maxTokens,
+      messages: [
+        { role: "system", content: o.system },
+        { role: "user", content: o.user },
+      ],
+      ...(o.json && o.jsonMode === "response_format" ? { response_format: { type: "json_object" } } : {}),
+      // Ollama keeps models resident; other providers ignore this field.
+      ...(o.baseUrl.includes("11434") ? { keep_alive: "10m" } : {}),
+    }),
+    signal: o.signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new AIRequestError(`${o.baseUrl} responded ${response.status}: ${text.slice(0, 300)}`, response.status);
+  }
+
+  const payload = (await response.json()) as {
+    model?: string;
+    choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+
+  return {
+    content: payload.choices?.[0]?.message?.content ?? "",
+    model: payload.model ?? o.model,
+    tokensIn: payload.usage?.prompt_tokens ?? 0,
+    tokensOut: payload.usage?.completion_tokens ?? 0,
+  };
+}
+
+/** Google Gemini native `generateContent` API. */
+async function completeGemini(
+  o: Omit<WireOptions, "baseUrl" | "jsonMode"> & { signal: AbortSignal },
+): Promise<WireResult> {
+  const base = PROVIDERS.gemini.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
+  const url = `${base}/models/${encodeURIComponent(o.model)}:generateContent?key=${encodeURIComponent(o.apiKey)}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: o.system }] },
+      contents: [{ role: "user", parts: [{ text: o.user }] }],
+      generationConfig: {
+        temperature: o.temperature,
+        maxOutputTokens: o.maxTokens,
+        ...(o.json ? { responseMimeType: "application/json" } : {}),
+      },
+    }),
+    signal: o.signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new AIRequestError(`Gemini responded ${response.status}: ${text.slice(0, 300)}`, response.status);
+  }
+
+  const payload = (await response.json()) as {
+    modelVersion?: string;
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  };
+
+  return {
+    content: payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "",
+    model: payload.modelVersion ?? o.model,
+    tokensIn: payload.usageMetadata?.promptTokenCount ?? 0,
+    tokensOut: payload.usageMetadata?.candidatesTokenCount ?? 0,
+  };
 }
 
 export function parseJsonSafe<T>(content: string): T {

@@ -1,5 +1,73 @@
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
+
+/**
+ * pdf-lib's standard fonts are WinAnsi-encoded: emoji, narrow no-break spaces and
+ * other out-of-range code points make `widthOfTextAtSize`/`drawText` throw and
+ * would 500 the export route. Typographic characters that *are* representable are
+ * kept; anything else is folded to a sensible ASCII fallback or dropped.
+ */
+const TRANSLITERATE: Record<string, string> = {
+  "\u00a0": " ",
+  "\u202f": " ",
+  "\u2009": " ",
+  "\u2007": " ",
+  "\u200b": "",
+  "\u200c": "",
+  "\u200d": "",
+  "\ufeff": "",
+  "\u2018": "'",
+  "\u2019": "'",
+  "\u201a": "'",
+  "\u201c": '"',
+  "\u201d": '"',
+  "\u201e": '"',
+  "\u2032": "'",
+  "\u2033": '"',
+  "\u2026": "...",
+  "\u00ad": "",
+  "\u0009": "    ",
+};
+
+const encodable = new WeakMap<PDFFont, Map<string, boolean>>();
+
+function isEncodable(font: PDFFont, char: string): boolean {
+  let cache = encodable.get(font);
+  if (!cache) {
+    cache = new Map();
+    encodable.set(font, cache);
+  }
+  const cached = cache.get(char);
+  if (cached !== undefined) return cached;
+  let ok = true;
+  try {
+    font.encodeText(char);
+  } catch {
+    ok = false;
+  }
+  cache.set(char, ok);
+  return ok;
+}
+
+/** Makes arbitrary user/model text safe to measure and draw with a WinAnsi font. */
+export function sanitiseForPdf(text: string, font: PDFFont): string {
+  if (!text) return "";
+  let out = "";
+  for (const char of text) {
+    const mapped = TRANSLITERATE[char];
+    if (mapped !== undefined) {
+      out += mapped;
+      continue;
+    }
+    if (char === "\n") {
+      out += char;
+      continue;
+    }
+    if (char === "\r") continue;
+    out += isEncodable(font, char) ? char : "";
+  }
+  return out;
+}
 
 /** Renders a cover letter as a clean, printable PDF (pure JS, no native deps). */
 export async function textToPdf(input: { title: string; body: string; author?: string | null }): Promise<Buffer> {
@@ -17,30 +85,45 @@ export async function textToPdf(input: { title: string; body: string; author?: s
   let page = pdf.addPage([pageWidth, pageHeight]);
   let y = pageHeight - margin;
 
-  const writeLine = (text: string, options: { bold?: boolean; size?: number; gap?: number } = {}) => {
+  const writeLine = (rawText: string, options: { bold?: boolean; size?: number; gap?: number } = {}) => {
     const size = options.size ?? fontSize;
     const activeFont = options.bold ? bold : font;
-    const words = text.split(" ");
-    let line = "";
-    const lines: string[] = [];
-    for (const word of words) {
-      const candidate = line ? `${line} ${word}` : word;
-      if (activeFont.widthOfTextAtSize(candidate, size) > maxWidth) {
-        if (line) lines.push(line);
-        line = word;
-      } else {
-        line = candidate;
-      }
-    }
-    if (line) lines.push(line);
+    const text = sanitiseForPdf(rawText, activeFont);
 
-    for (const rendered of lines) {
-      if (y < margin + lineHeight) {
-        page = pdf.addPage([pageWidth, pageHeight]);
-        y = pageHeight - margin;
+    // Single newlines are meaningful (addresses, bullet stacks) — render each
+    // segment as its own wrapped block instead of measuring them in one go.
+    for (const paragraph of text.split("\n")) {
+      if (!paragraph.trim()) {
+        y -= lineHeight * (options.gap ?? 1);
+        continue;
       }
-      page.drawText(rendered, { x: margin, y, size, font: activeFont, color: rgb(0.08, 0.09, 0.12) });
-      y -= lineHeight * (options.gap ?? 1);
+
+      const words = paragraph
+        .split(/\s+/)
+        .filter(Boolean)
+        .flatMap((word) => hardWrap(word, activeFont, size, maxWidth));
+
+      let line = "";
+      const lines: string[] = [];
+      for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (activeFont.widthOfTextAtSize(candidate, size) > maxWidth) {
+          if (line) lines.push(line);
+          line = word;
+        } else {
+          line = candidate;
+        }
+      }
+      if (line) lines.push(line);
+
+      for (const rendered of lines) {
+        if (y < margin + lineHeight) {
+          page = pdf.addPage([pageWidth, pageHeight]);
+          y = pageHeight - margin;
+        }
+        page.drawText(rendered, { x: margin, y, size, font: activeFont, color: rgb(0.08, 0.09, 0.12) });
+        y -= lineHeight * (options.gap ?? 1);
+      }
     }
   };
 
@@ -48,6 +131,7 @@ export async function textToPdf(input: { title: string; body: string; author?: s
   if (input.author) {
     writeLine(input.author, { size: 10, gap: 1.6 });
   }
+
   y -= lineHeight;
 
   for (const paragraph of input.body.split(/\n{2,}/)) {
@@ -59,6 +143,26 @@ export async function textToPdf(input: { title: string; body: string; author?: s
 
   const bytes = await pdf.save();
   return Buffer.from(bytes);
+}
+
+/** Splits a token that is wider than the text column (long URLs, identifiers). */
+function hardWrap(word: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  if (!word) return [];
+  if (font.widthOfTextAtSize(word, size) <= maxWidth) return [word];
+
+  const parts: string[] = [];
+  let current = "";
+  for (const char of word) {
+    const candidate = current + char;
+    if (current && font.widthOfTextAtSize(candidate, size) > maxWidth) {
+      parts.push(current);
+      current = char;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) parts.push(current);
+  return parts;
 }
 
 /** Renders a cover letter as an editable .docx file. */
@@ -86,6 +190,20 @@ export async function textToDocx(input: { title: string; body: string; author?: 
 
   const doc = new Document({ sections: [{ children: paragraphs }] });
   return Buffer.from(await Packer.toBuffer(doc));
+}
+
+/** Renders a cover letter as Markdown (plain, portable, diff-friendly). */
+export function textToMarkdown(input: { title: string; body: string; author?: string | null }): string {
+  const header = [`# ${input.title}`, ""];
+  if (input.author) header.push(`_${input.author}_`, "");
+
+  const blocks = input.body
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => (/^[\-\*•]/.test(block) ? block : block.replace(/\n/g, "  \n")));
+
+  return [...header, ...blocks, ""].join("\n");
 }
 
 export function safeFileName(value: string, extension: string) {

@@ -2,6 +2,7 @@ import { complete, isAIUnavailable } from "../client";
 import { PROMPT, SYSTEM } from "../prompts";
 import { personalizationScore, qualityScore } from "../quality";
 import type { CandidateProfile } from "@/lib/db/schema";
+import { aiConfigured } from "@/lib/env";
 
 export type FollowUpInput = {
   profile: CandidateProfile;
@@ -73,7 +74,7 @@ export async function draftFollowUp(input: FollowUpInput): Promise<FollowUpDraft
   let model = "fallback-heuristic";
   let source: "ai" | "heuristic" = "heuristic";
 
-  if (process.env.OPENAI_API_KEY) {
+  if (aiConfigured) {
     try {
       const completion = await complete<{ subject?: string; body?: string }>({
         system: SYSTEM.followUp,

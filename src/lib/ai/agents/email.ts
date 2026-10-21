@@ -2,6 +2,7 @@ import { complete, isAIUnavailable } from "../client";
 import { PROMPT, SYSTEM } from "../prompts";
 import { htmlToText, personalizationScore, qualityScore } from "../quality";
 import type { CandidateProfile, Company, JobListing } from "@/lib/db/schema";
+import { aiConfigured } from "@/lib/env";
 
 export type EmailDraftInput = {
   profile: CandidateProfile;
@@ -191,7 +192,7 @@ export async function draftEmail(input: EmailDraftInput): Promise<EmailDraft> {
   let model = "fallback-heuristic";
   let source: "ai" | "heuristic" = "heuristic";
 
-  if (process.env.OPENAI_API_KEY) {
+  if (aiConfigured) {
     try {
       const result = await complete<{ subject?: string; body?: string; highlights?: string[] }>({
         system: SYSTEM.email,
@@ -231,7 +232,7 @@ export async function draftEmail(input: EmailDraftInput): Promise<EmailDraft> {
       if (result.data.subject && result.data.body) {
         subject = result.data.subject.trim();
         body = result.data.body.trim();
-        model = result.model;
+        model = result.provider || result.model;
         source = "ai";
         if (Array.isArray(result.data.highlights) && result.data.highlights.length) highlights.splice(0, highlights.length, ...result.data.highlights.slice(0, 4));
       }

@@ -320,7 +320,8 @@ export const jobListings = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex("job_listings_dedupe_hash_unique").on(t.dedupeHash),
+    // Scoped per user: two accounts may legitimately discover the same listing.
+    uniqueIndex("job_listings_user_dedupe_unique").on(t.userId, t.dedupeHash),
     index("job_listings_user_discovered_idx").on(t.userId, t.discoveredAt),
     index("job_listings_user_active_idx").on(t.userId, t.isActive),
     index("job_listings_company_idx").on(t.companyId),

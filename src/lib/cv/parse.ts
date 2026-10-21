@@ -1,3 +1,4 @@
+import { aiConfigured } from "@/lib/env";
 /**
  * CV parsing: PDF / DOCX → text → structured profile.
  *
@@ -597,7 +598,7 @@ function buildRecommendations(parsed: Pick<ParsedCV, "skills" | "experience" | "
 
 /** Refines rule-based extraction with an LLM when one is configured. */
 export async function analyseCvWithAI(text: string, language: "en" | "fr"): Promise<ParsedCV | null> {
-  if (!process.env.OPENAI_API_KEY) return null;
+  if (!aiConfigured) return null;
   try {
     const { complete } = await import("@/lib/ai/client");
     const { PROMPT, SYSTEM } = await import("@/lib/ai/prompts");

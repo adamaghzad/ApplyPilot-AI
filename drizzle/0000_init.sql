@@ -444,7 +444,7 @@ CREATE INDEX "email_messages_user_received_idx" ON "email_messages" USING btree 
 CREATE INDEX "email_messages_application_idx" ON "email_messages" USING btree ("application_id");--> statement-breakpoint
 CREATE INDEX "follow_ups_user_status_due_idx" ON "follow_ups" USING btree ("user_id","status","due_at");--> statement-breakpoint
 CREATE INDEX "generated_emails_user_created_idx" ON "generated_emails" USING btree ("user_id","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "job_listings_dedupe_hash_unique" ON "job_listings" USING btree ("dedupe_hash");--> statement-breakpoint
+CREATE UNIQUE INDEX "job_listings_user_dedupe_unique" ON "job_listings" USING btree ("user_id","dedupe_hash");--> statement-breakpoint
 CREATE INDEX "job_listings_user_discovered_idx" ON "job_listings" USING btree ("user_id","discovered_at");--> statement-breakpoint
 CREATE INDEX "job_listings_user_active_idx" ON "job_listings" USING btree ("user_id","is_active");--> statement-breakpoint
 CREATE INDEX "job_listings_company_idx" ON "job_listings" USING btree ("company_id");--> statement-breakpoint

@@ -1,5 +1,5 @@
 {
-  "id": "f1a4c53c-4837-4c83-b2a5-f44abfdf9f8c",
+  "id": "eeb08337-2a8e-4e46-8a5f-bd50552b53b4",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2820,9 +2820,15 @@
         }
       },
       "indexes": {
-        "job_listings_dedupe_hash_unique": {
-          "name": "job_listings_dedupe_hash_unique",
+        "job_listings_user_dedupe_unique": {
+          "name": "job_listings_user_dedupe_unique",
           "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "dedupe_hash",
               "isExpression": false,

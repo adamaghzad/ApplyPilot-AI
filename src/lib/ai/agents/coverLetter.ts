@@ -2,6 +2,7 @@ import { complete, isAIUnavailable } from "../client";
 import { PROMPT, SYSTEM } from "../prompts";
 import { escapeHtml, htmlToText, personalizationScore, qualityScore, wordCount } from "../quality";
 import type { CandidateProfile, Company, JobListing } from "@/lib/db/schema";
+import { aiConfigured } from "@/lib/env";
 
 export type CoverLetterInput = {
   profile: CandidateProfile;
@@ -133,7 +134,7 @@ export async function draftCoverLetter(input: CoverLetterInput): Promise<CoverLe
   let model = "fallback-heuristic";
   let source: "ai" | "heuristic" = "heuristic";
 
-  if (process.env.OPENAI_API_KEY) {
+  if (aiConfigured) {
     try {
       const result = await complete<{ title?: string; content?: string }>({
         system: SYSTEM.coverLetter,
@@ -177,7 +178,7 @@ export async function draftCoverLetter(input: CoverLetterInput): Promise<CoverLe
         title = result.data.title?.trim() || title;
         content = result.data.content.trim();
         plainText = htmlToText(content);
-        model = result.model;
+        model = result.provider || result.model;
         source = "ai";
       }
     } catch (error) {

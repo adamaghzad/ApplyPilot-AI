@@ -3,7 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { dbReady, getDb } from "@/lib/db";
 import { candidateProfiles, coverLetters } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
-import { safeFileName, textToDocx, textToPdf } from "@/lib/documents/export";
+import { safeFileName, textToDocx, textToMarkdown, textToPdf } from "@/lib/documents/export";
 import { ApiError, fail } from "@/lib/api";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -11,7 +11,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     await dbReady();
     const user = await requireUser();
     const { id } = await ctx.params;
-    const format = new URL(req.url).searchParams.get("format") ?? "pdf";
+    const format = (new URL(req.url).searchParams.get("format") ?? "pdf").toLowerCase();
 
     const db = getDb();
     const [letter] = await db
@@ -40,6 +40,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         headers: {
           "content-type": "text/plain; charset=utf-8",
           "content-disposition": `attachment; filename="${safeFileName(letter.title, "txt")}"`,
+        },
+      });
+    }
+
+    if (format === "md") {
+      return new Response(textToMarkdown({ title: letter.title, body, author: profile?.fullName ?? null }), {
+        headers: {
+          "content-type": "text/markdown; charset=utf-8",
+          "content-disposition": `attachment; filename="${safeFileName(letter.title, "md")}"`,
         },
       });
     }

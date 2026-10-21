@@ -2,6 +2,7 @@ import { complete, isAIUnavailable } from "../client";
 import { PROMPT, SYSTEM } from "../prompts";
 import type { CandidateProfile, JobListing } from "@/lib/db/schema";
 import { clamp } from "@/lib/utils";
+import { aiConfigured } from "@/lib/env";
 
 export type MatchInput = {
   profile: CandidateProfile;
@@ -167,7 +168,7 @@ export async function matchJob(input: MatchInput): Promise<MatchResult> {
   const { profile, job } = input;
   const lang = input.language ?? profile.preferredLanguage ?? "en";
 
-  if (process.env.OPENAI_API_KEY) {
+  if (aiConfigured) {
     try {
       const result = await complete<{ explanation: string }>({
         system: SYSTEM.matching,

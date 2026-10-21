@@ -2,6 +2,7 @@ import { complete, isAIUnavailable } from "../client";
 import { PROMPT, SYSTEM } from "../prompts";
 import { domainOf, extractEmails, fetchPage, guessCareersUrl } from "@/lib/integrations/web";
 import type { ResearchSource } from "@/lib/db/schema";
+import { aiConfigured } from "@/lib/env";
 
 export type DiscoveredContact = {
   email: string;
@@ -147,7 +148,7 @@ export async function researchCompany(input: ResearchInput): Promise<ResearchRes
     ? `Fetched ${reachable} public page(s).`
     : "No public page could be reached from this environment (network restricted or site blocks crawlers).";
 
-  if (process.env.OPENAI_API_KEY) {
+  if (aiConfigured) {
     try {
       const result = await complete<{
         description?: string;
@@ -186,7 +187,7 @@ export async function researchCompany(input: ResearchInput): Promise<ResearchRes
       (result.data.technologies ?? []).forEach((tech) => technologies.add(tech));
       confidence = Math.max(0, Math.min(1, result.data.confidence ?? confidence));
       notes = result.data.notes?.trim() || notes;
-      model = result.model;
+      model = result.provider || result.model;
       source = "ai";
     } catch (error) {
       if (!isAIUnavailable(error)) {

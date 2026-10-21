@@ -16,15 +16,13 @@ const nextConfig: NextConfig = {
     // Must stay external: PGlite loads WASM assets via `new URL(..., import.meta.url)`,
     // which webpack rewrites into a foreign-realm URL that Node's fs rejects.
     "@electric-sql/pglite",
-    "pdf-parse",
-    "pdf-parse/lib/pdf-parse.js",
+    // PDFs are parsed by our own dependency-free extractor (src/lib/cv/parse.ts);
+    // pdf-lib stays external so its WASM-free font handling is not rebundled.
     "pdf-lib",
     "mammoth",
     "docx",
     "bullmq",
     "ioredis",
-    "@prisma/client",
-    "prisma",
   ],
   experimental: {
     serverActions: {
