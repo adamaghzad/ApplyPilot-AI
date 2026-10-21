@@ -808,6 +808,21 @@ function AiTab() {
 
 function DataTab() {
   const [confirming, setConfirming] = React.useState(false);
+  const [seeding, setSeeding] = React.useState(false);
+
+  async function seedDemo() {
+    setSeeding(true);
+    try {
+      const result = await api.post<{ companies: number; jobs: number; applications: number; contacts: number }>("/api/demo", {});
+      toast.success(
+        `Demo data seeded — ${result.companies} companies, ${result.jobs} jobs, ${result.applications} applications, ${result.contacts} contacts`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not seed demo data");
+    } finally {
+      setSeeding(false);
+    }
+  }
 
   async function exportData() {
     try {
@@ -848,6 +863,10 @@ function DataTab() {
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => void exportData()}>
             <Download className="h-3.5 w-3.5" /> Export JSON
+          </Button>
+          <Button size="sm" variant="outline" disabled={seeding} onClick={() => void seedDemo()}>
+            {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Building2 className="h-3.5 w-3.5" />}
+            Seed demo data
           </Button>
           {!confirming ? (
             <Button size="sm" variant="destructive" onClick={() => setConfirming(true)}>
