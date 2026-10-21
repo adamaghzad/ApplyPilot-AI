@@ -891,12 +891,16 @@ function DataTab() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Wraps the control in a real <label> so the input is reachable by clicking the
+ * text and is announced correctly by screen readers.
+ */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+    <label className="block space-y-1.5">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       {children}
-    </div>
+    </label>
   );
 }
 

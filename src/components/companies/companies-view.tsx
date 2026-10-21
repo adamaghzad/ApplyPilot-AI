@@ -184,8 +184,17 @@ export function CompaniesView() {
           {rows.map((company) => (
             <motion.div key={company.id} layout>
               <Card
-                className="group h-full cursor-pointer border-border/70 bg-card/50 backdrop-blur transition-all hover:border-primary/50 hover:shadow-lg"
+                className="group h-full cursor-pointer border-border/70 bg-card/50 backdrop-blur transition-all hover:border-primary/50 hover:shadow-lg focus-within:border-primary/60"
                 onClick={() => setDetailId(company.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setDetailId(company.id);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open ${company.name}`}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">

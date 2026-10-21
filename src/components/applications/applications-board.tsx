@@ -285,6 +285,15 @@ export function ApplicationsBoard() {
                         }}
                         onDragEnd={() => setDragging(null)}
                         onClick={() => setSelected(row.application.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelected(row.application.id);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open ${row.job.title} at ${row.company.name}`}
                         className={cn(
                           "cursor-grab rounded-lg border border-border/70 bg-background/70 p-3 text-left transition-all hover:border-primary/50 hover:shadow-md active:cursor-grabbing",
                           busyId === row.application.id && "opacity-60",
