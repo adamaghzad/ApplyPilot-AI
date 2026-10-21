@@ -172,6 +172,26 @@ Open <http://localhost:3000>, create an account, complete onboarding, upload a C
 **Settings → Data → seed demo data** (or `POST /api/demo`) to populate a realistic pipeline
 for a tour.
 
+### Long-lived preview (shared or CI sandboxes)
+
+`next dev` compiles each route on demand and, with PGlite loaded, a full tour easily reaches
+2–3 GB of RSS. Next's dev watchdog restarts the server once the heap passes 80 % of its limit,
+so a dev preview on a small machine cycles every few minutes. Prefer the production build for
+anything long-lived:
+
+```bash
+npm run build
+npm start            # ~500 MB RSS, no watchdog, no on-demand compilation
+```
+
+Two rules that follow from the embedded database:
+
+- **One process owns `.pgdata`.** Opening it with a second PGlite client while the server is
+  running corrupts it (`[db] migration failed: RuntimeError: Aborted()`); recover with
+  `npm run db:reset` and re-seed. Inspect data through the API instead.
+- **`next build` overwrites the dev server's `.next`.** Restart the dev server after a build,
+  or requests fail with `Could not find the module … in the React Client Manifest`.
+
 ### Scripts
 
 | Script | Purpose |
@@ -380,6 +400,9 @@ intended for multi-instance production deployments.
 | Gemini/OpenRouter errors | Check the key and that the model is enabled on your account |
 | `column … does not exist` after a schema change | Run `npm run db:generate && npm run db:migrate` |
 | Dev server rejects the preview host | `allowedDevOrigins` in `next.config.ts` must include your host |
+| Dev server keeps restarting (`Server is approaching the used memory threshold`) | Dev compilation plus PGlite exceeds the heap — use `npm run build && npm start` |
+| `[db] migration failed` / `RuntimeError: Aborted()` | `.pgdata` was opened by a second PGlite process or left dirty — `npm run db:reset`, then re-seed |
+| `Could not find the module … in the React Client Manifest` | A production build overwrote the running dev server's `.next` — restart it |
 
 ---
 
