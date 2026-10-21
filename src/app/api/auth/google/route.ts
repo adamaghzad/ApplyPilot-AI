@@ -22,5 +22,3 @@ export async function GET(req: Request) {
 
   return NextResponse.redirect(url.toString());
 }
-
-export const GMAIL_CONNECT_SCOPES = GMAIL_SCOPES;
