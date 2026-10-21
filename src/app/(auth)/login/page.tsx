@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -17,6 +18,16 @@ import { api } from "@/lib/api-client";
 import { signInSchema, type SignInInput } from "@/lib/validation";
 
 export default function LoginPage() {
+  // `useSearchParams` opts the page into client-side rendering, so the part that
+  // reads it must sit behind a Suspense boundary for the production build.
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = React.useState<string | null>(

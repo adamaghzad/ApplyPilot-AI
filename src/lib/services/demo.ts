@@ -599,7 +599,22 @@ export async function seedDemoData(userId: string): Promise<DemoSummary> {
     meta: { demo: true },
   });
 
-  return { companies: companiesCreated, jobs: jobsCreated, applications: applicationsCreated, contacts: contactsCreated, seeded: true };
+  const summary = {
+    companies: companiesCreated,
+    jobs: jobsCreated,
+    applications: applicationsCreated,
+    contacts: contactsCreated,
+    seeded: true,
+  } as { companies: number; jobs: number; applications: number; contacts: number; seeded: boolean; note?: string };
+
+  // Applications are only drafted for vacancies scoring above the threshold, so
+  // a thin profile legitimately produces none. Say so instead of looking broken.
+  if (companiesCreated > 0 && applicationsCreated === 0) {
+    summary.note =
+      "No applications were drafted: none of the sample vacancies scored above the 55% match threshold for the current CV. Add skills and a headline to your profile, then re-seed to see prepared applications.";
+  }
+
+  return summary;
 }
 
 /** Removes demonstration data (keeps the user's own CV, profile and settings). */

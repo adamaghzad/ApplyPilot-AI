@@ -813,10 +813,17 @@ function DataTab() {
   async function seedDemo() {
     setSeeding(true);
     try {
-      const result = await api.post<{ companies: number; jobs: number; applications: number; contacts: number }>("/api/demo", {});
+      const result = await api.post<{
+        companies: number;
+        jobs: number;
+        applications: number;
+        contacts: number;
+        note?: string;
+      }>("/api/demo", {});
       toast.success(
         `Demo data seeded — ${result.companies} companies, ${result.jobs} jobs, ${result.applications} applications, ${result.contacts} contacts`,
       );
+      if (result.note) toast.info(result.note);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not seed demo data");
     } finally {
