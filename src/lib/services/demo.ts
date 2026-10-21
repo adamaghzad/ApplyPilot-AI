@@ -510,7 +510,9 @@ export async function seedDemoData(userId: string): Promise<DemoSummary> {
       await db.update(applications).set({ subject: email.subject, updatedAt: new Date() }).where(eq(applications.id, application.id));
 
       if (status === "SENT" || status === "REPLIED" || status === "INTERVIEW") {
-        const sentAt = new Date(Date.now() - (status === "SENT" ? 3 : 9) * 86_400_000);
+        // Sent-without-reply applications are old enough that their follow-up
+        // date has passed, so the dashboard shows a realistic chase list.
+        const sentAt = new Date(Date.now() - (status === "SENT" ? 12 : 9) * 86_400_000);
         await db
           .update(applications)
           .set({ sentAt, approvedAt: new Date(sentAt.getTime() - 86_400_000), followUpDueAt: addBusinessDays(sentAt, 7), updatedAt: new Date() })

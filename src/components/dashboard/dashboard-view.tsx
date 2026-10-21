@@ -28,6 +28,7 @@ import {
   Inbox,
   Mail,
   PlayCircle,
+  Repeat,
   Sparkles,
   Square,
   Target,
@@ -60,7 +61,16 @@ type Stats = {
 };
 
 type ApplicationRow = {
-  application: { id: string; status: string; scheduledFor: string | null; compatibilityScore: number; sentAt: string | null; updatedAt: string };
+  application: {
+    id: string;
+    status: string;
+    scheduledFor: string | null;
+    compatibilityScore: number;
+    sentAt: string | null;
+    repliedAt: string | null;
+    followUpDueAt: string | null;
+    updatedAt: string;
+  };
   job: { id: string; title: string; location: string | null; remote: string };
   company: { id: string; name: string; researchStatus: string };
 };
@@ -107,6 +117,16 @@ export function DashboardView() {
   const data = stats.data;
   const rows = applications.data?.applications ?? [];
   const awaiting = rows.filter((row) => row.application.status === "AWAITING_APPROVAL");
+  // Applications sent a while ago with no reply, whose follow-up date has passed.
+  const now = Date.now();
+  const followUps = rows
+    .filter((row) => {
+      const app = row.application;
+      return app.followUpDueAt && new Date(app.followUpDueAt).getTime() <= now && !app.repliedAt && app.sentAt;
+    })
+    .sort((a, b) => new Date(a.application.followUpDueAt!).getTime() - new Date(b.application.followUpDueAt!).getTime())
+    .slice(0, 4);
+
   const upcoming = rows
     .filter((row) => row.application.status === "SCHEDULED" && row.application.scheduledFor)
     .sort((a, b) => new Date(a.application.scheduledFor!).getTime() - new Date(b.application.scheduledFor!).getTime())
@@ -442,6 +462,47 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Follow-ups */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Follow-ups due</CardTitle>
+          <CardDescription>
+            Applications you sent that have not had a reply since the follow-up date
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {applications.isLoading && Array.from({ length: 2 }).map((_, index) => <Skeleton key={index} className="h-14 w-full" />)}
+
+          {followUps.length === 0 && !applications.isLoading && (
+            <div className="py-8 text-center">
+              <Repeat className="mx-auto h-6 w-6 text-muted-foreground" />
+              <p className="mt-2 text-xs text-muted-foreground">
+                Nothing to chase yet. Follow-ups are drafted automatically once an application has been out for the
+                delay you set (7 days by default).
+              </p>
+            </div>
+          )}
+
+          {followUps.map((row) => (
+            <Link
+              key={row.application.id}
+              href={`/applications?focus=${row.application.id}`}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/40 p-3 transition-colors hover:bg-muted"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{row.job.title}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {row.company.name} · sent {timeAgo(row.application.sentAt!)}
+                </p>
+              </div>
+              <Badge variant="warning">
+                due {timeAgo(row.application.followUpDueAt!)}
+              </Badge>
+            </Link>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
